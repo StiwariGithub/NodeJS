@@ -1,0 +1,111 @@
+var express = require("express");
+var bodyParser = require("body-parser");
+var mongoose = require("mongoose");
+var session = require("client-sessions");
+var bcrypt = require("bcryptjs");
+
+var app = express();
+app.locals.pretty = true;
+app.use(bodyParser.urlencoded({ extended : true }));
+app.use(session({
+    cookieName : "session",
+    secret : "sdffsdfs98w39r0rwfjwwemrwerwe",
+    duration : 30 * 60 * 1000,
+    activeDuration : 5 * 60 * 1000
+}))
+
+var Schema = mongoose.Schema;
+var ObjectId = Schema.ObjectId;
+var error = "";
+
+
+var User = mongoose.model("Users", new Schema({
+    id : ObjectId,
+    name : String,
+    password : String,
+    email : {type : String, unique : true}
+}));
+
+mongoose.connect("mongodb://localhost/infinite");
+
+app.get("/", function(req, res){
+    res.render("index.jade")
+});
+
+app.get("/login", function(req, res){
+    res.render("login.jade");
+});
+app.post("/login", function(req, res){
+    // res.render("login.jade");
+    User.findOne({email : req.body.email}, function(error, ruser){
+        if(error){
+            console.log("we are unable to find such user")
+        }else{
+            if(!ruser){
+                res.render("login.jade",{
+                    message : "sorry we do not have your credentials"
+                })
+            }else{
+               //  if(req.body.password === ruser.password){
+                   if( bcrypt.compareSync(req.body.password, ruser.password) ){
+                    req.session.user = ruser;
+                    res.redirect("/report")
+                }else{
+                    res.render("login.jade", {
+                        message : "Invalid email or password"
+                    })
+                }
+            }
+        }
+    })
+});
+
+app.get("/register", function(req, res){
+    res.render("register.jade")
+});
+app.post("/register", function(req, res){
+    var hash = bcrypt.hashSync(req.body.password, bcrypt.genSaltSync(10));
+
+    var user = new User({
+        name : req.body.name,
+        password : hash,
+        email : req.body.email
+    });
+
+    user.save(function(err){
+        if(err){
+            if(err.code === 11000){
+                console.log("email id exists");
+                error = "email already in use";
+                res.render("register.jade",{ message : error })
+            }
+        }else{
+           res.redirect("/report") 
+        }
+    })
+});
+
+app.get("/report", function(req, res){
+   // res.render("report.jade");
+   if(req.session && req.session.user){
+       User.findOne({ email:req.session.user.email }, function(error, user){
+            if(!user){
+                req.session.reset();
+                res.redirect("/login");
+            }else{
+                res.locals.user = user;
+                res.render("report.jade")
+            }
+       })
+   }else{
+       res.redirect("/login");
+   }
+});
+
+app.get("/logout", function(req, res){
+    req.session.reset();
+    res.redirect("/");
+});
+
+app.listen(2007);
+console.log("server is now running on localhost:2007");
